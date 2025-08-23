@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: getemail-backend
+    env: node
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: cd backend && npm install
+    startCommand: cd backend && npm run start
+
+  - type: static_site
+    name: getemail-frontend
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: cd frontend && npm install && npm run build
+    publishPath: frontend/dist
