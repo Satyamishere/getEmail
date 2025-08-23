@@ -52,7 +52,7 @@ function Home() {
 
   return (
     <div style={{ padding: 20 }}>
-      <h2>Gmail OAuth (dev flow)</h2>
+      <h2>Gmail OAuth </h2>
       <p>{message}</p>
       <div style={{ marginBottom: 12 }}>
   <a href="https://getemail.onrender.com/">Login with Google</a>
