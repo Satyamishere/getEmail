@@ -39,7 +39,7 @@ function Home() {
         return;
       }
     const resp = await axios.post(
-  'https://getemail-1.onrender.com/getmails',
+  'https://getemail.onrender.com/getmails',
         { filters: { from: sender || undefined, subject: subjectFilter || undefined } },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -55,7 +55,7 @@ function Home() {
       <h2>Gmail OAuth (dev flow)</h2>
       <p>{message}</p>
       <div style={{ marginBottom: 12 }}>
-  <a href="https://getemail-1.onrender.com/">Login with Google</a>
+  <a href="https://getemail.onrender.com/">Login with Google</a>
       </div>
       <div style={{ marginBottom: 12 }}>
         <strong>Logged in as:</strong> {loggedInEmail || 'not authenticated'}
