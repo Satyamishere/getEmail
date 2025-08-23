@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
+// backend URL hard-coded inline below per request
+
 function Home() {
   const [loggedInEmail, setLoggedInEmail] = useState('');
   // sender = the "from:" filter in Gmail query for your mailbox
@@ -36,8 +38,8 @@ function Home() {
         setMessage('No token found. Click Login first.');
         return;
       }
-      const resp = await axios.post(
-        'http://localhost:4000/getmails',
+    const resp = await axios.post(
+  'https://getemail-1.onrender.com/getmails',
         { filters: { from: sender || undefined, subject: subjectFilter || undefined } },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -53,7 +55,7 @@ function Home() {
       <h2>Gmail OAuth (dev flow)</h2>
       <p>{message}</p>
       <div style={{ marginBottom: 12 }}>
-        <a href="http://localhost:4000/">Login with Google</a>
+  <a href="https://getemail-1.onrender.com/">Login with Google</a>
       </div>
       <div style={{ marginBottom: 12 }}>
         <strong>Logged in as:</strong> {loggedInEmail || 'not authenticated'}
