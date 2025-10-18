@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import axios from "axios";
 
-// backend URL hard-coded inline below per request
+
 
 function Home() {
   const [loggedInEmail, setLoggedInEmail] = useState("");
@@ -11,8 +11,9 @@ function Home() {
   const [message, setMessage] = useState("");
   const [messagesList, setMessagesList] = useState([]);
 
-  // Parse tokens from URL on mount (Option A flow)
+  
   useEffect(() => {
+    // here we parse authenticated email,access and refresh token we send from backend thorugj url
     const params = new URLSearchParams(window.location.search);
     const access = params.get("access");
     const refresh = params.get("refresh");
@@ -38,11 +39,10 @@ function Home() {
   useEffect(() => {
       const stopOnUnload = async () => {
         try {
-          // We prefer relying on the server-set HttpOnly cookie for auth when available.
-          // navigator.sendBeacon cannot set custom headers; for same-origin cookies this will include credentials.
+          
           const url = 'http://localhost:4000/stopmails';
           const token = localStorage.getItem('accessNotGoogleToken');
-
+          //check if the current browser supports sendbeacon 
           if (navigator.sendBeacon) {
             
             try { navigator.sendBeacon(url); } catch (e) { /* ignore */ }
@@ -50,7 +50,7 @@ function Home() {
           }
 
           // Fetch fallback for browsers/environments without sendBeacon support.
-          // Use credentials: 'include' so cookies are sent when allowed by CORS and cookie attributes.
+          // Use credentials: include so cookies are sent when allowed by CORS 
           const headers = { 'Content-Type': 'application/json' };
           if (token) headers['Authorization'] = `Bearer ${token}`;
           await fetch(url, { method: 'POST', keepalive: true, credentials: 'include', headers, body: token ? JSON.stringify({ token }) : undefined });
@@ -60,7 +60,8 @@ function Home() {
     return () => window.removeEventListener('beforeunload', stopOnUnload);
   }, []);
 
-  // Start backend cron once, then poll latestMessages every 10s to render
+  // Start backend cron once, then poll latestMessages every 10s to render.
+  // intervalref stores the interval id .its needed when we stop poll during unmounting
   const intervalRef = useRef(null);
 
   // fetchLatest is shared: used by the submit handler, manual refresh button, and the interval
