@@ -1,9 +1,14 @@
 import { google } from "googleapis";
 import User from "../models/user.js";
 import jwt from "jsonwebtoken";
-import bcrypt from "bcryptjs";
+
 import axios from "axios";
+import cron from 'node-cron';
 // @ts-nocheck
+
+// Module-scoped caches to avoid using global.* and to keep state within this module.
+const latestMessages = new Map();
+const cronRegistry = new Map();
 
 const isSame = (a, b) => {
   if (a.length !== b.length) return false;
@@ -86,6 +91,19 @@ const callback = async (req, res) => {
       user.refreshToken = tokens.refresh_token;
       await user.save();
     }
+    // set secure HttpOnly cookie so navigator.sendBeacon and browser requests include it
+    try {
+      res.cookie('accessNotGoogleToken', accessNotGoogleToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      });
+    } catch (cookieErr) {
+      // non-fatal: some environments may not have res.cookie (very rare)
+      console.error('Failed to set cookie on callback:', cookieErr?.message || cookieErr);
+    }
+
     req.user = data;
     // Redirect back to frontend with our internal tokens as query params (quick dev flow).
     const frontendBase = process.env.FRONTEND_URL || "http://localhost:5173";
@@ -103,6 +121,7 @@ const callback = async (req, res) => {
 
 const searchmail = async (req, res) => {
   try {
+    console.log('[searchmail] invoked by', req.user?.email);
     const arr = [];
   const { filters } = req.body || {};
     // tolerate user entering the sender email in the subject field by mistake
@@ -125,23 +144,19 @@ const searchmail = async (req, res) => {
       arr.push(`subject:${subjectInput}`);
     }
     const q = arr.join(" ");
-    // Allow caller to optionally specify which saved mailbox to query.
-    // If not provided, default to the authenticated user's email.
+    
+    //here req.user.email is the authenticated email we set in req during middleware.we used this targetmail to find the saved authenticated mail and obatin the keys for oauthobj thats the main goal
     const targetEmail = (filters && filters.accountEmail) ? filters.accountEmail.toString().trim() : req.user.email;
 
   // Authorization rule: caller must be querying their own saved mailbox, or be an admin set via ADMIN_EMAIL in env.
   // Defensive access: make sure req.user exists and provide a fallback so we don't throw if callerEmail is removed.
-  const callerEmail = req.user?.email;
-    // const adminEmail = process.env.ADMIN_EMAIL;
-    // if (targetEmail !== callerEmail && callerEmail !== adminEmail) {
-    //   return res.status(403).json({ message: 'Forbidden: you may only query your own mailbox unless you are the configured admin.' });
-    // }
+  
 
     const user = await User.findOne({ email: targetEmail });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    // Set up Gmail client
+    // Set up Gmail client using the tokens from authenticated gmail we saved in our database
     const oauth2UserObj = createoauth2obj();
     oauth2UserObj.setCredentials({
       access_token: user.accessToken,
@@ -215,7 +230,7 @@ const searchmail = async (req, res) => {
       // Slack is optional as well
       if (process.env.SLACK_WEBHOOK_URL) {
         const slackMessage = {
-          text: `📬 ${messageDetails.length} new emails filtered`,
+          text: ` ${messageDetails.length} new emails filtered`,
           attachments: messageDetails.map((msg) => ({
             color: "#36a64f",
             fields: [
@@ -236,10 +251,72 @@ const searchmail = async (req, res) => {
       // don't fail the main request because of sheet/slack issues
     }
 
+    // --- store latest messages in an in-memory cache for frontend polling ---
+    
+    
+    
+    
+    try {
+      latestMessages.set(targetEmail, messageDetails);
+    } catch (e) { console.error('cache store err', e?.message || e); }
+
+    // --- start per-user cron (every 10s) to continue polling for this email if not already started ---
+    
+    
+    let scheduled = false;
+    try {
+      if (!cronRegistry.has(targetEmail)) {
+        const task = cron.schedule('*/10 * * * * *', async () => {
+          try {
+            const up = await User.findOne({ email: targetEmail });
+            if (!up) return; // user removed
+            const oauth2 = createoauth2obj();
+            oauth2.setCredentials({ access_token: up.accessToken, refresh_token: up.refreshToken });
+            const g = google.gmail({ version: 'v1', auth: oauth2 });
+            const lr = await g.users.messages.list({ userId: 'me', q });
+            const fetched = [];
+            const msgs = lr?.data?.messages || [];
+            for (const mm of msgs.slice(0, 10)) {
+              try {
+                const mget = await g.users.messages.get({ userId: 'me', id: mm.id, format: 'metadata', metadataHeaders: ['from','subject','date'] });
+                const headers = mget.data.payload.headers || [];
+                fetched.push({
+                  id: mm.id,
+                  from: headers.find(h => h.name === 'From')?.value || '',
+                  subject: headers.find(h => h.name === 'Subject')?.value || '',
+                  date: headers.find(h => h.name === 'Date')?.value || '',
+                  snippet: mget.data.snippet || '',
+                });
+              } catch (e) { /* ignore per-message errors */ }
+            }
+            // update cache
+            try {
+              latestMessages.set(targetEmail, fetched);
+            } catch (e) { /* ignore */ }
+            console.log(`[cron] polled ${targetEmail}: ${fetched.length}`);
+          } catch (e) {
+            console.error('[cron] err', e?.message || e);
+            // stop job on fatal errors to avoid tight crash loop
+            const t = cronRegistry.get(targetEmail);
+            if (t) { try { t.stop(); } catch (er) {} }
+            cronRegistry.delete(targetEmail);
+          }
+        });
+        cronRegistry.set(targetEmail, task);
+        //console.log('[cron] started', targetEmail);
+        scheduled = true;
+      }
+    } catch (e) { console.error('scheduling err', e?.message || e); }
+
+
+
+
+
     return res.status(200).json({
       message: "fetched messages",
       count: messageDetails.length,
       messages: messageDetails,
+      scheduled,
     });
   } catch (error) {
     //console.error("Error in searchmail:", error);
@@ -249,4 +326,50 @@ const searchmail = async (req, res) => {
     });
   }
   }
-export {login,callback,searchmail}
+// Stop cron for an email (helper used internally and by route)
+function stopPollingForEmail(email) {
+  try {
+    if (!cronRegistry) return false;
+    const t = cronRegistry.get(email);
+    if (t) {
+      try { t.stop(); } catch (e) {}
+      cronRegistry.delete(email);
+    }
+    latestMessages.delete(email);
+    console.log('[cron] stopped', email);
+    return true;
+  } catch (e) { return false; }
+}
+
+// Express handler: return latest cached messages for authenticated user
+const getLatestMessages = async (req, res) => {
+  try {
+    const email = req.user?.email;
+    if (!email) return res.status(400).json({ message: 'missing user' });
+    const msgs = latestMessages.get(email) || [];
+    return res.json({ messages: msgs });
+  } catch (e) { return res.status(500).json({ message: 'error' }); }
+};
+
+// Debug/status handler: return whether a cron is running for this user and the cached messages
+const getPollStatus = async (req, res) => {
+  try {
+    const email = req.user?.email;
+    if (!email) return res.status(400).json({ message: 'missing user' });
+    const polling = cronRegistry.has(email);
+    const msgs = latestMessages.get(email) || [];
+    return res.json({ polling, count: msgs.length, messages: msgs });
+  } catch (e) { return res.status(500).json({ message: 'error' }); }
+};
+
+// Express handler: stop polling for this user
+const stopPolling = async (req, res) => {
+  try {
+    const email = req.user?.email;
+    if (!email) return res.status(400).json({ message: 'missing user' });
+    const stopped = stopPollingForEmail(email);
+    return res.json({ stopped });
+  } catch (e) { return res.status(500).json({ message: 'error' }); }
+};
+
+export {login,callback,searchmail,stopPollingForEmail,getLatestMessages,getPollStatus,stopPolling}

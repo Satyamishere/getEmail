@@ -11,18 +11,34 @@ import router from './routes/user.route.js';
 
 const app = express();
 
+const allowedOrigins = [process.env.FRONTEND_URL || 'http://localhost:5173', process.env.DEPLOYED_FRONTEND || 'https://getemail-1.onrender.com'];
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  origin: function(origin, callback) {
+    // allow requests with no origin like mobile apps or curl
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
 
-// Use router at root level
-app.get('/test', (req, res) => {
-  console.log('Test route was hit');
-  res.send('Test route works!');
+// Simple request logger (after body parsers) to help debug incoming requests from the frontend
+app.use((req, res, next) => {
+  try {
+    const shortHeaders = { authorization: !!req.headers.authorization, cookie: !!req.headers.cookie };
+    console.log(`[req] ${req.method} ${req.path} headers=${JSON.stringify(shortHeaders)}`);
+    if (req.method === 'POST' || req.method === 'PUT') {
+      try { if (req.body && Object.keys(req.body).length) console.log('[req] body:', JSON.stringify(req.body).slice(0,1000)); } catch (e) {}
+    }
+  } catch (e) { /* ignore logging errors */ }
+  next();
 });
+
 app.use(router);
 
 // Connect to MongoDB but don't let a connection failure crash the server during dev.
