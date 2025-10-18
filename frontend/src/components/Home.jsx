@@ -134,7 +134,7 @@ function Home() {
           />
         </div>
         <button type="submit">Fetch mails</button>
-        <button type="button" onClick={fetchLatest} style={{ marginLeft: 8 }}>Manual refresh</button>
+        
       </form>
 
       {messagesList.length > 0 && (
