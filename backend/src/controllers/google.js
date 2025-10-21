@@ -6,7 +6,7 @@ import axios from "axios";
 import cron from 'node-cron';
 // @ts-nocheck
 
-// Module-scoped caches to avoid using global.* and to keep state within this module.
+
 const latestMessages = new Map();
 const cronRegistry = new Map();
 
@@ -76,7 +76,7 @@ const callback = async (req, res) => {
       version: "v2",
     });
     const { data } = await objToInteractWithMail.userinfo.get();
-    // sign the email for use as middleware
+    
     const { accessNotGoogleToken, refreshNotGoogleToken } = generateAcessandRefreshToken(data.email);
     let user = await User.findOne({ email: data.email });
     if (!user) {
@@ -100,7 +100,7 @@ const callback = async (req, res) => {
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
     } catch (cookieErr) {
-      // non-fatal: some environments may not have res.cookie (very rare)
+      
       console.error('Failed to set cookie on callback:', cookieErr?.message || cookieErr);
     }
 
@@ -129,11 +129,7 @@ const searchmail = async (req, res) => {
     let subjectInput = filters?.subject?.toString().trim();
 
 
-    // if (!fromInput && subjectInput && subjectInput.includes('@')) {
-    //   // assume they meant to put the sender in the email field
-    //   fromInput = subjectInput;
-    //   subjectInput = '';
-    // }
+    
 
 
 
@@ -148,8 +144,7 @@ const searchmail = async (req, res) => {
     //here req.user.email is the authenticated email we set in req during middleware.we used this targetmail to find the saved authenticated mail and obatin the keys for oauthobj thats the main goal
     const targetEmail = (filters && filters.accountEmail) ? filters.accountEmail.toString().trim() : req.user.email;
 
-  // Authorization rule: caller must be querying their own saved mailbox, or be an admin set via ADMIN_EMAIL in env.
-  // Defensive access: make sure req.user exists and provide a fallback so we don't throw if callerEmail is removed.
+  
   
 
     const user = await User.findOne({ email: targetEmail });
@@ -170,8 +165,8 @@ const searchmail = async (req, res) => {
       messages = await gmail.users.messages.list({ userId: "me", q: q });
     } catch (gmailErr) {
       console.error('Gmail API list error:', gmailErr?.message || gmailErr);
-      // Re-throw so outer catch returns a 500 with the message (and it will be logged)
-      throw new Error(`GMAIL_API_LIST_ERROR: ${gmailErr?.message || gmailErr}`);
+      
+      
     }
     if (!messages?.data?.messages) {
       return res.status(404).json({ message: "No messages found" });
@@ -199,8 +194,7 @@ const searchmail = async (req, res) => {
         }
       })
     );
-    // Try to write to Google Sheets and send Slack notifications, but do not fail the whole request
-    // if those auxiliary operations fail (for example missing Sheets scope in the OAuth token).
+  
     try {
       const sheets = google.sheets({ version: "v4", auth: oauth2UserObj });
       const spreadsheetId = process.env.GOOGLE_SHEET_ID; // optional
@@ -227,7 +221,7 @@ const searchmail = async (req, res) => {
           resource: { values },
         });
       }
-      // Slack is optional as well
+      
       if (process.env.SLACK_WEBHOOK_URL) {
         const slackMessage = {
           text: ` ${messageDetails.length} new emails filtered`,
@@ -248,10 +242,10 @@ const searchmail = async (req, res) => {
       }
     } catch (auxErr) {
       console.error('Auxiliary operation (Sheets/Slack) failed, continuing:', auxErr.message);
-      // don't fail the main request because of sheet/slack issues
+      
     }
 
-    // --- store latest messages in an in-memory cache for frontend polling ---
+    
     
     
     
@@ -260,7 +254,7 @@ const searchmail = async (req, res) => {
       latestMessages.set(targetEmail, messageDetails);
     } catch (e) { console.error('cache store err', e?.message || e); }
 
-    // --- start per-user cron (every 10s) to continue polling for this email if not already started ---
+    // start per-user cron every 10s
     
     
     let scheduled = false;
@@ -296,14 +290,14 @@ const searchmail = async (req, res) => {
             console.log(`[cron] polled ${targetEmail}: ${fetched.length}`);
           } catch (e) {
             console.error('[cron] err', e?.message || e);
-            // stop job on fatal errors to avoid tight crash loop
+           
             const t = cronRegistry.get(targetEmail);
             if (t) { try { t.stop(); } catch (er) {} }
             cronRegistry.delete(targetEmail);
           }
         });
         cronRegistry.set(targetEmail, task);
-        //console.log('[cron] started', targetEmail);
+        
         scheduled = true;
       }
     } catch (e) { console.error('scheduling err', e?.message || e); }
@@ -319,14 +313,14 @@ const searchmail = async (req, res) => {
       scheduled,
     });
   } catch (error) {
-    //console.error("Error in searchmail:", error);
+    
     return res.status(500).json({
       message: "Error fetching emails",
       error: error.message,
     });
   }
   }
-// Stop cron for an email (helper used internally and by route)
+// Stop cron for an email 
 function stopPollingForEmail(email) {
   try {
     if (!cronRegistry) return false;
@@ -362,7 +356,7 @@ const getPollStatus = async (req, res) => {
   } catch (e) { return res.status(500).json({ message: 'error' }); }
 };
 
-// Express handler: stop polling for this user
+
 const stopPolling = async (req, res) => {
   try {
     const email = req.user?.email;
