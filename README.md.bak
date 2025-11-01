@@ -1,0 +1,29 @@
+````markdown
+# getEmail
+
+Tiny Gmail + Sheets + Slack demo. Backend handles Google OAuth and Gmail API calls; frontend is a small Vite React app that talks to the backend.
+
+Quick local dev
+1. Copy `.env.example` -> `.env` and fill in keys.
+2. Start backend and frontend in separate terminals:
+
+```powershell
+cd backend
+npm install
+npm run dev
+
+cd frontend
+npm install
+npm run dev
+```
+
+Deploy to Render
+- I added a `render.yaml` that defines a `getemail-backend` web service and a `getemail-frontend` static site. Connect your GitHub repo to Render and it will follow the manifest.
+
+Notes
+- Re-authorize Google when you change scopes (Sheets scope needs consent).
+- Keep `.env` secret; `.env` is in `.gitignore`.
+
+If you want, I can open a PR with these changes or add more deployment options.
+
+````
