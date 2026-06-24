@@ -198,14 +198,17 @@ const searchmail = async (req, res) => {
     try {
       const sheets = google.sheets({ version: "v4", auth: oauth2UserObj });
       const spreadsheetId = process.env.GOOGLE_SHEET_ID; // optional
+      console.log(`[sheets] spreadsheetId: ${spreadsheetId}`);
       if (spreadsheetId) {
         const range = "Sheet1!A1";
         // Prepare data for sheets
         const values = messageDetails.map((msg) => [msg.date || "", msg.from || "", msg.subject || "", msg.snippet || ""]);
+        console.log(`[sheets] preparing to append ${values.length} rows`);
         // First, check if the sheet has data
         const headerCheck = await sheets.spreadsheets.values.get({ spreadsheetId, range: "Sheet1!A1:D1" });
         let check_arr = ["Date", "From", "Subject", "Content"];
         if (!headerCheck.data.values || !isSame(headerCheck.data.values[0], check_arr)) {
+          console.log(`[sheets] updating headers`);
           await sheets.spreadsheets.values.update({
             spreadsheetId,
             range: "Sheet1!A1:D1",
@@ -213,6 +216,7 @@ const searchmail = async (req, res) => {
             resource: { values: [["Date", "From", "Subject", "Content"]] },
           });
         }
+        console.log(`[sheets] appending data`);
         await sheets.spreadsheets.values.append({
           spreadsheetId,
           range: "Sheet1!A2:D",
@@ -220,6 +224,7 @@ const searchmail = async (req, res) => {
           insertDataOption: "INSERT_ROWS",
           resource: { values },
         });
+        console.log(`[sheets] successfully appended ${values.length} rows`);
       }
       
       if (process.env.SLACK_WEBHOOK_URL) {
